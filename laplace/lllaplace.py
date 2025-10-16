@@ -158,7 +158,8 @@ class LLLaplace(ParametricLaplace):
 
         self._backend_kwargs["last_layer"] = True
         self._last_layer_name: str | None = last_layer_name
-
+        self.pred_samples: float | torch.Tensor = None # KD: init pred_samples with None in case they are not stored later
+        
     def fit(
         self,
         train_loader: DataLoader,
@@ -279,7 +280,7 @@ class LLLaplace(ParametricLaplace):
             fs.append(f.detach() if not self.enable_backprop else f)
 
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
-        fs = torch.stack(fs)
+        self.pred_samples = fs # KD: Don't think this is called in my evals
 
         if self.likelihood == Likelihood.CLASSIFICATION:
             fs = torch.softmax(fs, dim=-1)
@@ -294,7 +295,7 @@ class LLLaplace(ParametricLaplace):
         **model_kwargs,
     ) -> torch.Tensor:
         py = 0
-
+        pred_samples = []
         feats = None
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
@@ -308,8 +309,10 @@ class LLLaplace(ParametricLaplace):
                 # Used the cached features for the rest iterations
                 logits = self.model.last_layer(feats)
 
+            pred_samples.append(torch.softmax(logits, dim=-1)) #KD: store all probs
             py += torch.softmax(logits.detach(), dim=-1) / n_samples
 
+        self.pred_samples = torch.stack(pred_samples, dim=0) # KD: store pred_samples for Posterior Loss Variance
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
 
         return py

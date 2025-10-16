@@ -127,7 +127,7 @@ class BaseLaplace:
         self.prior_mean: float | torch.Tensor = prior_mean
         if sigma_noise != 1 and likelihood != Likelihood.REGRESSION:
             raise ValueError("Sigma noise != 1 only available for regression.")
-
+        self.pred_samples: float | torch.Tensor = None # KD: create pred_samples with None if nothing is stored for Posterior Loss Variance calculation
         self.sigma_noise: float | torch.Tensor = sigma_noise
         self.temperature: float = temperature
         self.enable_backprop: bool = enable_backprop
@@ -481,12 +481,17 @@ class BaseLaplace:
                 )
                 neg_log_marglik.backward()
                 optimizer.step()
+                print(log_prior_prec.detach().exp())
 
             self.prior_precision = log_prior_prec.detach().exp()
         elif method == TuningMethod.GRIDSEARCH:
             if val_loader is None:
                 raise ValueError("gridsearch requires a validation set DataLoader")
-
+            
+            # KD: added prints for debugging
+            num_batches = len(val_loader)
+            print(f"The Val Loader has {num_batches} batches.") 
+            print("Length of the dataset: ", len(val_loader.dataset))
             interval = torch.logspace(log_prior_prec_min, log_prior_prec_max, grid_size)
 
             if loss is None:
@@ -521,7 +526,7 @@ class BaseLaplace:
         pred_type: PredType | str,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
-        progress_bar: bool = False,
+        progress_bar: bool = True, # KD: set progress_bar to true
     ) -> torch.Tensor:
         assert callable(loss) or isinstance(loss, torchmetrics.Metric)
 
@@ -531,7 +536,7 @@ class BaseLaplace:
 
         for prior_prec in pbar:
             self.prior_precision = prior_prec
-
+            print("test prior precison: ", prior_prec) # KD: print for testing
             try:
                 result = validate(
                     self,
@@ -557,7 +562,6 @@ class BaseLaplace:
 
             results.append(result)
             prior_precs.append(prior_prec)
-
         return prior_precs[np.argmin(results)]
 
     @property
@@ -653,12 +657,14 @@ class BaseLaplace:
             return f_mu, f_var
 
         if link_approx == LinkApprox.MC:
-            return self._glm_predictive_samples(
+            pred_samples = self._glm_predictive_samples(
                 f_mu,
                 f_var,
                 n_samples=n_samples,
                 diagonal_output=diagonal_output,
-            ).mean(dim=0)
+            )
+            self.pred_samples = pred_samples # KD: store pred_samples for Posterior Loss Variance calculation
+            return pred_samples.mean(dim=0)
         elif link_approx == LinkApprox.PROBIT:
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
             return torch.softmax(kappa * f_mu, dim=-1)
@@ -1382,12 +1388,16 @@ class ParametricLaplace(BaseLaplace):
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
         py = 0.0
+        pred_samples = []
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(
                 X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
             ).detach()
+            pred_samples.append(torch.softmax(logits, dim=-1))
             py += torch.softmax(logits, dim=-1) / n_samples
+        
+        self.pred_samples = torch.stack(pred_samples, dim=0) # KD: store pred_samples for Posterior Loss Variance
 
         vector_to_parameters(self.mean, self.params)
 
@@ -1979,7 +1989,7 @@ class LowRankLaplace(ParametricLaplace):
 
         self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
-
+        print("...calculate eigenvalues...")
         eigenvectors, eigenvalues, loss = self.backend.eig_lowrank(train_loader)
         self.H = (eigenvectors, eigenvalues)
         self.loss = loss
@@ -2067,7 +2077,6 @@ class DiagLaplace(ParametricLaplace):
         N: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.backend.diag(X, y, N=N, **self._asdl_fisher_kwargs)
-
     @property
     def posterior_precision(self) -> torch.Tensor:
         """Diagonal posterior precision \\(p\\).

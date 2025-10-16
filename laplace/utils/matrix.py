@@ -55,7 +55,10 @@ class Kron:
             params = model
 
         kfacs = list()
+        ctr = 0 #KD
         for p in params:
+            print(f"{ctr}: shape={p.shape}, requires_grad={p.requires_grad}") #KD
+            ctr += 1 #KD
             if p.ndim == 1:  # bias
                 P = p.size(0)
                 kfacs.append([torch.zeros(P, P, device=device, dtype=dtype)])
@@ -73,7 +76,7 @@ class Kron:
                 )
             else:
                 raise ValueError("Invalid parameter shape in network.")
-
+        print("Len of kfacs: ", len(kfacs)) #KD
         return cls(kfacs)
 
     def __add__(self, other: Kron) -> Kron:

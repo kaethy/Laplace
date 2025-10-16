@@ -8,6 +8,8 @@ test_batch_size = 100
 
 path = "./temp/"
 
+mean = [0.4914, 0.4822, 0.4465]
+std = [0.2470, 0.2435, 0.2616]
 
 def CIFAR10(train=True, batch_size=None, augm_flag=True):
     if batch_size is None:
@@ -16,7 +18,10 @@ def CIFAR10(train=True, batch_size=None, augm_flag=True):
         else:
             batch_size = test_batch_size
 
-    transform_base = [transforms.ToTensor()]
+    transform_base = [
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ]
     transform_train = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),

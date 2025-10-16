@@ -365,7 +365,7 @@ def normal_samples(
     if mean.shape == var.shape:
         # diagonal covariance
         scaled_samples = var.sqrt().unsqueeze(-1) * randn_samples.unsqueeze(0)
-        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
+        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1)) # shape: (n_samples, batch_size, output_dim)
     elif mean.shape == var.shape[:2] and var.shape[-1] == mean.shape[1]:
         # full covariance
         scale = torch.linalg.cholesky(var)

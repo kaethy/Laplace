@@ -212,6 +212,7 @@ class AsdfghjklHessian(AsdfghjklInterface):
     def eig_lowrank(
         self, data_loader: DataLoader
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        print("Using rank of: ", self.low_rank, " for the lowrank approximation.")
         # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
         eigvals, eigvecs = hessian_eigenvalues(
             self.model,
